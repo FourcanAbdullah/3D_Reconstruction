@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+.env
+
+# App outputs
+outputs/
+south_building/
+colmap_workspace/
+
+# VS Code
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db

@@ -1,0 +1,34 @@
+{
+  "name": "COLMAP + MeshLab (GPU/CPU)",
+  "build": {
+    "dockerfile": "Dockerfile",
+    "context": ".."                 // build context = project root (so COPY requirements.txt works)
+  },
+  "workspaceFolder": "/workspace",
+  "workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind,consistency=cached",
+
+  // Pass host GPU & GUI sockets into the container (safe on non-GPU systems too)
+  "runArgs": [
+    "--gpus=all",
+    "-v", "/mnt/wslg:/mnt/wslg",
+    "-v", "/tmp/.X11-unix:/tmp/.X11-unix"
+  ],
+
+  // Inherit WSLg GUI env so PyQt / MeshLab windows show on Windows
+  "containerEnv": {
+    "DISPLAY": "${localEnv:DISPLAY}",
+    "WAYLAND_DISPLAY": "${localEnv:WAYLAND_DISPLAY}",
+    "XDG_RUNTIME_DIR": "/mnt/wslg/runtime-dir",
+    "PULSE_SERVER": "/mnt/wslg/PulseServer",
+    "QT_QPA_PLATFORM": "wayland;xcb"
+  },
+
+  // Re-run pip if you tweak requirements.txt later
+  "postCreateCommand": "pip install -r requirements.txt || true",
+
+  // Quality of life
+  "features": {
+    "ghcr.io/devcontainers/features/common-utils:2": {}
+  }
+}
+

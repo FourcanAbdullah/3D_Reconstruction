@@ -1,0 +1,9 @@
+# GUI + app
+PyQt6==6.7.0
+
+# Demo / image handling
+pillow==10.4.0
+opencv-python==4.10.0.84
+
+# Mesh processing (headless replacement for meshlabserver; also useful in-app)
+pymeshlab==2023.12
