@@ -66,79 +66,85 @@ except Exception:
 
 def run_method_a(image_paths: List[str], output_dir: str, log: Callable[[str], None]) -> List[str]:
     """
-    COLMAP SfM pipeline that auto-detects GPU.
-    Falls back to CPU if no CUDA GPU is present.
-    """
-    """
-    Method A: 2D → 3D reconstruction using COLMAP CLI (prebuilt binary on PATH).
-    Pipeline: feature_extractor → exhaustive_matcher → mapper → (optional) model_converter
-    Returns a list of key output paths (sparse model dir, TXT model, and optionally dense PLY if enabled).
+    End-to-end COLMAP baseline:
+      Sparse SfM  -> Dense MVS (fused.ply) -> Poisson mesh (poisson_mesh.ply)
+    - Auto-detects GPU and enables CUDA if available
+    - Uses CPU fallback otherwise
+    - Returns key outputs: sparse model dir, TXT model, fused.ply, poisson mesh, report
     """
     outputs: List[str] = []
-    log("[SfM] Starting 2D→3D reconstruction with COLMAP…")
+    log("[SfM] Starting COLMAP baseline (Sparse + Dense + Poisson)…")
 
-    # Checks
+    # --- sanity checks ---
     if len(image_paths) < 3:
         log("[SfM] Need at least 3 images.")
         return outputs
     colmap_bin = shutil.which("colmap")
     if colmap_bin is None:
-        log("[SfM] 'colmap' not found. Run inside the COLMAP container.")
+        log("[SfM] 'colmap' not found in PATH. Run inside the COLMAP dev-container.")
         return outputs
 
-    # Detect GPU
+    # --- GPU auto-detect ---
     use_gpu = False
     try:
-        # Will succeed only if NVIDIA runtime is enabled and GPU visible
-        proc = subprocess.run(["nvidia-smi"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        if proc.returncode == 0:
+        p = subprocess.run(["nvidia-smi"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        if p.returncode == 0:
             use_gpu = True
     except Exception:
         pass
-    if use_gpu:
-        log("[SfM] GPU detected → enabling CUDA acceleration.")
-    else:
-        log("[SfM] No GPU detected → running on CPU.")
+    log(f"[SfM] {'GPU detected → enabling CUDA.' if use_gpu else 'No GPU detected → CPU mode.'}")
 
-    # Workspace
+    # --- workspace layout ---
     ws = os.path.join(output_dir, "colmap_workspace")
     img_dir = os.path.join(ws, "images")
     sparse_dir = os.path.join(ws, "sparse")
     txt_dir = os.path.join(ws, "sparse_text")
+    dense_dir = os.path.join(ws, "dense")
+    mesh_dir = os.path.join(ws, "mesh")
     db_path = os.path.join(ws, "database.db")
-    for d in (ws, img_dir, sparse_dir, txt_dir):
+    for d in (ws, img_dir, sparse_dir, txt_dir, dense_dir, mesh_dir):
         os.makedirs(d, exist_ok=True)
 
-    # Copy images
+    # copy images into workspace (avoid cross-mount weirdness)
     log("[SfM] Copying input images…")
-    for p in image_paths:
+    copied = 0
+    for pth in image_paths:
         try:
-            shutil.copy2(p, os.path.join(img_dir, os.path.basename(p)))
+            shutil.copy2(pth, os.path.join(img_dir, os.path.basename(pth)))
+            copied += 1
         except Exception as e:
-            log(f"[SfM] Failed to copy {p}: {e}")
+            log(f"[SfM] Failed to copy {pth}: {e}")
+    if copied < 3:
+        log("[SfM] Fewer than 3 readable images after copy. Aborting.")
+        return outputs
 
     threads = max(1, (os.cpu_count() or 2))
-    max_img = os.getenv("COLMAP_MAX_IMAGE_SIZE", "2000")
+    max_img = os.getenv("COLMAP_MAX_IMAGE_SIZE", "2000")  # lower (e.g., 1600) for faster CPU runs
 
-    def stream(cmd: List[str]) -> int:
+    def stream(args: List[str]) -> int:
+        cmd = [colmap_bin] + args
         log("[SfM] $ " + " ".join(cmd))
         try:
             proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
             assert proc.stdout is not None
             for line in proc.stdout:
-                log(f"[SfM] {line.strip()}")
+                if line := line.rstrip("\n"):
+                    log(f"[SfM] {line}")
             return proc.wait()
         except Exception as e:
-            log(f"[SfM] Failed to run {cmd}: {e}")
+            log(f"[SfM] Failed to launch COLMAP: {e}")
             return 1
 
-    # Reset DB
-    if os.path.exists(db_path):
-        os.remove(db_path)
+    # fresh DB
+    try:
+        if os.path.exists(db_path):
+            os.remove(db_path)
+    except Exception:
+        pass
 
-    # Feature extraction
+    # -------- Sparse pipeline --------
     if stream([
-        colmap_bin, "feature_extractor",
+        "feature_extractor",
         "--database_path", db_path,
         "--image_path", img_dir,
         f"--SiftExtraction.use_gpu={'true' if use_gpu else 'false'}",
@@ -148,9 +154,8 @@ def run_method_a(image_paths: List[str], output_dir: str, log: Callable[[str], N
         log("[SfM] feature_extractor failed.")
         return outputs
 
-    # Matching
     if stream([
-        colmap_bin, "exhaustive_matcher",
+        "exhaustive_matcher",
         "--database_path", db_path,
         f"--SiftMatching.use_gpu={'true' if use_gpu else 'false'}",
         f"--SiftMatching.num_threads={threads}",
@@ -158,9 +163,8 @@ def run_method_a(image_paths: List[str], output_dir: str, log: Callable[[str], N
         log("[SfM] exhaustive_matcher failed.")
         return outputs
 
-    # Mapping
     if stream([
-        colmap_bin, "mapper",
+        "mapper",
         "--database_path", db_path,
         "--image_path", img_dir,
         "--output_path", sparse_dir,
@@ -170,27 +174,16 @@ def run_method_a(image_paths: List[str], output_dir: str, log: Callable[[str], N
         return outputs
 
     model0 = os.path.join(sparse_dir, "0")
-    if os.path.isdir(model0):
-        outputs.append(model0)
-        log(f"[SfM] Sparse model saved → {model0}")
-    else:
-        log("[SfM] No sparse model produced.")
+    if not os.path.isdir(model0):
+        log("[SfM] No sparse model produced. Check overlap/EXIF.")
         return outputs
-    # (Optional) Dense reconstruction — uncomment to enable
-    # os.makedirs(dense_dir, exist_ok=True)
-    # if run_colmap(["image_undistorter", "--image_path", img_dir, "--input_path", model0,
-    #                "--output_path", dense_dir, "--output_type", "COLMAP"]) == 0:
-    #     run_colmap(["patch_match_stereo", "--workspace_path", dense_dir,
-    #                 "--workspace_format", "COLMAP", "--PatchMatchStereo.geom_consistency", "true"])
-    #     fused_ply = os.path.join(dense_dir, "fused.ply")
-    #     run_colmap(["stereo_fusion", "--workspace_path", dense_dir,
-    #                 "--workspace_format", "COLMAP", "--output_path", fused_ply])
-    #     if os.path.exists(fused_ply):
-    #         outputs.append(fused_ply)
-    #         log(f"[SfM] Dense fused point cloud → {fused_ply}")
-    # Convert to TXT
+
+    outputs.append(model0)
+    log(f"[SfM] Sparse model → {model0}")
+
+    # Export TXT (for inspection/versioning)
     if stream([
-        colmap_bin, "model_converter",
+        "model_converter",
         "--input_path", model0,
         "--output_path", txt_dir,
         "--output_type", "TXT",
@@ -201,8 +194,97 @@ def run_method_a(image_paths: List[str], output_dir: str, log: Callable[[str], N
                 outputs.append(full)
         log(f"[SfM] TXT model saved → {txt_dir}")
 
+    # -------- Dense MVS --------
+    # 1) Undistort
+    if stream([
+        "image_undistorter",
+        "--image_path", img_dir,
+        "--input_path", model0,
+        "--output_path", dense_dir,
+        "--output_type", "COLMAP",
+    ]) != 0:
+        log("[Dense] image_undistorter failed.")
+        return outputs
+
+    # 2) PatchMatch stereo (geometry consistency helps)
+    if stream([
+        "patch_match_stereo",
+        "--workspace_path", dense_dir,
+        "--workspace_format", "COLMAP",
+        "--PatchMatchStereo.geom_consistency", "true",
+    ]) != 0:
+        log("[Dense] patch_match_stereo failed.")
+        return outputs
+
+    # 3) Stereo fusion → fused point cloud
+    fused_ply = os.path.join(dense_dir, "fused.ply")
+    if stream([
+        "stereo_fusion",
+        "--workspace_path", dense_dir,
+        "--workspace_format", "COLMAP",
+        "--output_path", fused_ply,
+    ]) != 0 or not os.path.exists(fused_ply):
+        log("[Dense] stereo_fusion failed or fused.ply missing.")
+        return outputs
+
+    outputs.append(fused_ply)
+    log(f"[Dense] Fused point cloud → {fused_ply}")
+
+    # -------- Poisson meshing (via PyMeshLab) --------
+    try:
+        import pymeshlab as ml  # installed via requirements.txt
+    except Exception:
+        log("[Mesh] PyMeshLab not installed; skipping Poisson. (Add 'pymeshlab' to requirements.txt.)")
+        log("[SfM] Done.")
+        return outputs
+
+    poisson_mesh = os.path.join(mesh_dir, "poisson_mesh.ply")
+    report_path = os.path.join(mesh_dir, "poisson_report.txt")
+    os.makedirs(mesh_dir, exist_ok=True)
+
+    # Tunables via env (good for quick sweeps)
+    depth = int(os.getenv("POISSON_DEPTH", "10"))                 # 8–12 typical
+    samples_per_node = float(os.getenv("POISSON_SPN", "1.5"))
+    point_weight = float(os.getenv("POISSON_POINT_WEIGHT", "4.0"))
+
+    try:
+        log("[Mesh] Running Screened Poisson meshing (PyMeshLab)…")
+        ms = ml.MeshSet()
+        ms.load_new_mesh(fused_ply)
+
+        # Optional pre-cleaning (uncomment if you see artifacts)
+        # ms.apply_filter('remove_duplicate_vertices')
+        # ms.apply_filter('remove_unreferenced_vertices')
+
+        ms.apply_filter(
+            'surface_reconstruction_screened_poisson',
+            depth=depth,
+            samplespernode=samples_per_node,
+            pointweight=point_weight
+        )
+
+        ms.save_current_mesh(poisson_mesh)
+
+        # Basic mesh report (verts/faces + params)
+        cur = ms.current_mesh()
+        vnum = getattr(cur, "vertex_number", lambda: None)()
+        fnum = getattr(cur, "face_number", lambda: None)()
+        with open(report_path, "w", encoding="utf-8") as f:
+            f.write("=== Poisson Mesh Report ===\n")
+            f.write(f"Vertices: {vnum}\n")
+            f.write(f"Faces:    {fnum}\n")
+            f.write(f"Params: depth={depth}, samples_per_node={samples_per_node}, point_weight={point_weight}\n")
+            f.write(f"Source:   {fused_ply}\n")
+
+        outputs += [poisson_mesh, report_path]
+        log(f"[Mesh] Poisson mesh → {poisson_mesh}")
+        log(f"[Mesh] Report → {report_path}")
+    except Exception as e:
+        log(f"[Mesh] Poisson meshing failed: {e}")
+
     log("[SfM] Done.")
     return outputs
+
 
 
 
