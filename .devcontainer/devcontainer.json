@@ -11,7 +11,9 @@
   "runArgs": [
     "--gpus=all",
     "-v", "/mnt/wslg:/mnt/wslg",
-    "-v", "/tmp/.X11-unix:/tmp/.X11-unix"
+    "-v", "/tmp/.X11-unix:/tmp/.X11-unix",
+    "-v", "/home/fourcanabdullah/Documents/south-building/images:/data/images:rw",
+
   ],
 
   // Inherit WSLg GUI env so PyQt / MeshLab windows show on Windows
@@ -24,7 +26,8 @@
   },
 
   // Re-run pip if you tweak requirements.txt later
-  "postCreateCommand": "pip install -r requirements.txt || true",
+
+  "postCreateCommand": "apt-get update && apt-get install -y libxcb-cursor0 libxkbcommon-x11-0 libxcb-xinerama0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-render-util0 libgl1 libglu1-mesa mesa-utils xauth && pip install -r requirements.txt",
 
   // Quality of life
   "features": {

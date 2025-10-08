@@ -7,3 +7,4 @@ opencv-python==4.10.0.84
 
 # Mesh processing (headless replacement for meshlabserver; also useful in-app)
 pymeshlab==2023.12
+trimesh

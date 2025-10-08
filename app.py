@@ -229,61 +229,63 @@ def run_method_a(image_paths: List[str], output_dir: str, log: Callable[[str], N
 
     outputs.append(fused_ply)
     log(f"[Dense] Fused point cloud → {fused_ply}")
+    
+        # -------- Poisson meshing (COLMAP) --------
+    os.makedirs(mesh_dir, exist_ok=True)
+    poisson_mesh = os.path.join(mesh_dir, "meshed-poisson.ply")
+    report_path = os.path.join(mesh_dir, "mesh_report.txt")
 
-    # -------- Poisson meshing (via PyMeshLab) --------
-    try:
-        import pymeshlab as ml  # installed via requirements.txt
-    except Exception:
-        log("[Mesh] PyMeshLab not installed; skipping Poisson. (Add 'pymeshlab' to requirements.txt.)")
+    log("[Mesh] Running COLMAP Poisson mesher…")
+    if stream([
+        "poisson_mesher",
+        "--input_path", fused_ply,
+        "--output_path", poisson_mesh,
+    ]) != 0 or not os.path.exists(poisson_mesh):
+        log("[Mesh] poisson_mesher failed or output missing.")
         log("[SfM] Done.")
         return outputs
 
-    poisson_mesh = os.path.join(mesh_dir, "poisson_mesh.ply")
-    report_path = os.path.join(mesh_dir, "poisson_report.txt")
-    os.makedirs(mesh_dir, exist_ok=True)
+        delaunay_mesh = os.path.join(mesh_dir, "meshed-delaunay.ply")
+    log("[Mesh] (Optional) Running COLMAP Delaunay mesher…")
+    if stream([
+        "delaunay_mesher",
+        "--input_path", dense_dir,
+        "--output_path", delaunay_mesh,
+    ]) == 0 and os.path.exists(delaunay_mesh):
+        outputs.append(delaunay_mesh)
+        log(f"[Mesh] Delaunay mesh → {delaunay_mesh}")
 
-    # Tunables via env (good for quick sweeps)
-    depth = int(os.getenv("POISSON_DEPTH", "10"))                 # 8–12 typical
-    samples_per_node = float(os.getenv("POISSON_SPN", "1.5"))
-    point_weight = float(os.getenv("POISSON_POINT_WEIGHT", "4.0"))
-
+    # Basic mesh report (size, modification time, etc.)
     try:
-        log("[Mesh] Running Screened Poisson meshing (PyMeshLab)…")
-        ms = ml.MeshSet()
-        ms.load_new_mesh(fused_ply)
-
-        # Optional pre-cleaning (uncomment if you see artifacts)
-        # ms.apply_filter('remove_duplicate_vertices')
-        # ms.apply_filter('remove_unreferenced_vertices')
-
-        ms.apply_filter(
-            'surface_reconstruction_screened_poisson',
-            depth=depth,
-            samplespernode=samples_per_node,
-            pointweight=point_weight
-        )
-
-        ms.save_current_mesh(poisson_mesh)
-
-        # Basic mesh report (verts/faces + params)
-        cur = ms.current_mesh()
-        vnum = getattr(cur, "vertex_number", lambda: None)()
-        fnum = getattr(cur, "face_number", lambda: None)()
+        stats = os.stat(poisson_mesh)
+        vnum = fnum = None
+        try:
+            # quick vertex/face count using trimesh if available
+            import trimesh
+            m = trimesh.load_mesh(poisson_mesh)
+            vnum, fnum = len(m.vertices), len(m.faces)
+        except Exception:
+            pass
         with open(report_path, "w", encoding="utf-8") as f:
-            f.write("=== Poisson Mesh Report ===\n")
-            f.write(f"Vertices: {vnum}\n")
-            f.write(f"Faces:    {fnum}\n")
-            f.write(f"Params: depth={depth}, samples_per_node={samples_per_node}, point_weight={point_weight}\n")
-            f.write(f"Source:   {fused_ply}\n")
-
-        outputs += [poisson_mesh, report_path]
+            f.write("=== COLMAP Poisson Mesh Report ===\n")
+            f.write(f"Mesh path : {poisson_mesh}\n")
+            f.write(f"Source PLY: {fused_ply}\n")
+            f.write(f"Size (MB) : {stats.st_size / 1e6:.2f}\n")
+            if vnum is not None and fnum is not None:
+                f.write(f"Vertices  : {vnum}\n")
+                f.write(f"Faces     : {fnum}\n")
+            f.write(f"Modified  : {time.ctime(stats.st_mtime)}\n")
+            f.write(f"Generated : COLMAP poisson_mesher\n")
         log(f"[Mesh] Poisson mesh → {poisson_mesh}")
         log(f"[Mesh] Report → {report_path}")
+        outputs += [poisson_mesh, report_path]
     except Exception as e:
-        log(f"[Mesh] Poisson meshing failed: {e}")
+        log(f"[Mesh] Failed to create mesh report: {e}")
 
     log("[SfM] Done.")
     return outputs
+
+
 
 
 
@@ -383,7 +385,7 @@ class ProcessorWorker(QRunnable):
 class MainWindow(QWidget):
     def __init__(self) -> None:
         super().__init__()
-        self.setWindowTitle("Multi-Image Processor (PyQt6)")
+        self.setWindowTitle("2D to 3D Resonstruction Comparer")
         self.resize(900, 600)
 
         self.thread_pool = QThreadPool.globalInstance()
@@ -452,7 +454,7 @@ class MainWindow(QWidget):
         files, _ = QFileDialog.getOpenFileNames(
             self,
             "Choose images",
-            "",
+            "/data/images",
             "Images (*.png *.jpg *.jpeg *.bmp *.tif *.tiff);;All files (*.*)",
         )
         for f in files:
