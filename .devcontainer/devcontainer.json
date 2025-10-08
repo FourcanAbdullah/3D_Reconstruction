@@ -12,7 +12,7 @@
     "--gpus=all",
     "-v", "/mnt/wslg:/mnt/wslg",
     "-v", "/tmp/.X11-unix:/tmp/.X11-unix",
-    "-v", "/home/fourcanabdullah/Documents/south-building/images:/data/images:rw",
+    "-v", "/home/fourcanabdullah/Documents/south-building/images:/data/images:rw"
 
   ],
 
