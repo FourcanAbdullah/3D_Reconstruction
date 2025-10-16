@@ -1,20 +1,3 @@
-"""
-PyQt6 app that lets a user:
-  • Upload at least 3 images
-  • Choose one or more processing methods via checkboxes
-  • Click Submit to run the selected methods on the chosen images
-
-This file includes stubbed method implementations you can replace with your own.
-It also uses a background worker to keep the UI responsive while processing.
-
-How to run:
-  pip install PyQt6
-  python app.py
-
-(Optional) If you want the demo image outputs (contact sheet / edges), install:
-  pip install pillow opencv-python
-Both are optional; the app runs without them and will log a helpful note if missing.
-"""
 from __future__ import annotations
 
 import shutil
@@ -43,9 +26,6 @@ from PyQt6.QtWidgets import (
     QFormLayout,
 )
 
-# -----------------------------
-# Optional demo dependencies
-# -----------------------------
 try:
     from PIL import Image
     PIL_AVAILABLE = True
@@ -53,20 +33,15 @@ except Exception:
     PIL_AVAILABLE = False
 
 try:
-    import cv2  # type: ignore
+    import cv2  
     CV2_AVAILABLE = True
 except Exception:
     CV2_AVAILABLE = False
 
 
-# -----------------------------
-# Image processing stubs
-# -----------------------------
-
-
 def run_method_a(image_paths: List[str], output_dir: str, log: Callable[[str], None]) -> List[str]:
     """
-    End-to-end COLMAP baseline:
+    COLMAP baseline:
       Sparse SfM  -> Dense MVS (fused.ply) -> Poisson mesh (poisson_mesh.ply)
     - Auto-detects GPU and enables CUDA if available
     - Uses CPU fallback otherwise
@@ -75,7 +50,7 @@ def run_method_a(image_paths: List[str], output_dir: str, log: Callable[[str], N
     outputs: List[str] = []
     log("[SfM] Starting COLMAP baseline (Sparse + Dense + Poisson)…")
 
-    # --- sanity checks ---
+    # edge cases
     if len(image_paths) < 3:
         log("[SfM] Need at least 3 images.")
         return outputs
@@ -84,7 +59,7 @@ def run_method_a(image_paths: List[str], output_dir: str, log: Callable[[str], N
         log("[SfM] 'colmap' not found in PATH. Run inside the COLMAP dev-container.")
         return outputs
 
-    # --- GPU auto-detect ---
+    #check gpu
     use_gpu = False
     try:
         p = subprocess.run(["nvidia-smi"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -94,7 +69,7 @@ def run_method_a(image_paths: List[str], output_dir: str, log: Callable[[str], N
         pass
     log(f"[SfM] {'GPU detected → enabling CUDA.' if use_gpu else 'No GPU detected → CPU mode.'}")
 
-    # --- workspace layout ---
+    # setup filesystem
     ws = os.path.join(output_dir, "colmap_workspace")
     img_dir = os.path.join(ws, "images")
     sparse_dir = os.path.join(ws, "sparse")
@@ -105,7 +80,7 @@ def run_method_a(image_paths: List[str], output_dir: str, log: Callable[[str], N
     for d in (ws, img_dir, sparse_dir, txt_dir, dense_dir, mesh_dir):
         os.makedirs(d, exist_ok=True)
 
-    # copy images into workspace (avoid cross-mount weirdness)
+    # copy images into file system
     log("[SfM] Copying input images…")
     copied = 0
     for pth in image_paths:
@@ -119,7 +94,7 @@ def run_method_a(image_paths: List[str], output_dir: str, log: Callable[[str], N
         return outputs
 
     threads = max(1, (os.cpu_count() or 2))
-    max_img = os.getenv("COLMAP_MAX_IMAGE_SIZE", "2000")  # lower (e.g., 1600) for faster CPU runs
+    max_img = os.getenv("COLMAP_MAX_IMAGE_SIZE", "2000")  # lower to lke 1600 for faster in CPU
 
     def stream(args: List[str]) -> int:
         cmd = [colmap_bin] + args
@@ -142,7 +117,7 @@ def run_method_a(image_paths: List[str], output_dir: str, log: Callable[[str], N
     except Exception:
         pass
 
-    # -------- Sparse pipeline --------
+    # sparse
     if stream([
         "feature_extractor",
         "--database_path", db_path,
@@ -181,7 +156,7 @@ def run_method_a(image_paths: List[str], output_dir: str, log: Callable[[str], N
     outputs.append(model0)
     log(f"[SfM] Sparse model → {model0}")
 
-    # Export TXT (for inspection/versioning)
+    # Export txt (for inspection/versioning)
     if stream([
         "model_converter",
         "--input_path", model0,
@@ -194,8 +169,8 @@ def run_method_a(image_paths: List[str], output_dir: str, log: Callable[[str], N
                 outputs.append(full)
         log(f"[SfM] TXT model saved → {txt_dir}")
 
-    # -------- Dense MVS --------
-    # 1) Undistort
+    # dense mvs
+    #Undistort
     if stream([
         "image_undistorter",
         "--image_path", img_dir,
@@ -206,7 +181,7 @@ def run_method_a(image_paths: List[str], output_dir: str, log: Callable[[str], N
         log("[Dense] image_undistorter failed.")
         return outputs
 
-    # 2) PatchMatch stereo (geometry consistency helps)
+    # PatchMatch stereo 
     if stream([
         "patch_match_stereo",
         "--workspace_path", dense_dir,
@@ -216,7 +191,7 @@ def run_method_a(image_paths: List[str], output_dir: str, log: Callable[[str], N
         log("[Dense] patch_match_stereo failed.")
         return outputs
 
-    # 3) Stereo fusion → fused point cloud
+    #Stereo fusion 
     fused_ply = os.path.join(dense_dir, "fused.ply")
     if stream([
         "stereo_fusion",
@@ -230,7 +205,7 @@ def run_method_a(image_paths: List[str], output_dir: str, log: Callable[[str], N
     outputs.append(fused_ply)
     log(f"[Dense] Fused point cloud → {fused_ply}")
     
-        # -------- Poisson meshing (COLMAP) --------
+    # Poisson meshing
     os.makedirs(mesh_dir, exist_ok=True)
     poisson_mesh = os.path.join(mesh_dir, "meshed-poisson.ply")
     report_path = os.path.join(mesh_dir, "mesh_report.txt")
@@ -255,19 +230,19 @@ def run_method_a(image_paths: List[str], output_dir: str, log: Callable[[str], N
         outputs.append(delaunay_mesh)
         log(f"[Mesh] Delaunay mesh → {delaunay_mesh}")
 
-    # Basic mesh report (size, modification time, etc.)
+    # Basic mesh report
     try:
         stats = os.stat(poisson_mesh)
         vnum = fnum = None
         try:
-            # quick vertex/face count using trimesh if available
+            # vertex/face count
             import trimesh
             m = trimesh.load_mesh(poisson_mesh)
             vnum, fnum = len(m.vertices), len(m.faces)
         except Exception:
             pass
         with open(report_path, "w", encoding="utf-8") as f:
-            f.write("=== COLMAP Poisson Mesh Report ===\n")
+            f.write("----------COLMAP Poisson Mesh Report----------\n")
             f.write(f"Mesh path : {poisson_mesh}\n")
             f.write(f"Source PLY: {fused_ply}\n")
             f.write(f"Size (MB) : {stats.st_size / 1e6:.2f}\n")
@@ -291,12 +266,7 @@ def run_method_a(image_paths: List[str], output_dir: str, log: Callable[[str], N
 
 
 def run_method_b(image_paths: List[str], output_dir: str, log: Callable[[str], None]) -> List[str]:
-    """
-    Demo "Method B": runs Canny edge detection via OpenCV on each image (if available).
-    If OpenCV is not installed, it logs actions only.
-
-    Returns a list of generated output file paths (one per readable input).
-    """
+    
     outputs: List[str] = []
     log("[Method B] Starting...")
     if not image_paths:
@@ -330,9 +300,6 @@ def run_method_b(image_paths: List[str], output_dir: str, log: Callable[[str], N
     return outputs
 
 
-# -----------------------------
-# Worker infrastructure
-# -----------------------------
 class WorkerSignals(QObject):
     progress = pyqtSignal(str)
     finished = pyqtSignal(str)
@@ -379,9 +346,7 @@ class ProcessorWorker(QRunnable):
             self.signals.error.emit(str(e))
 
 
-# -----------------------------
-# Main Window
-# -----------------------------
+
 class MainWindow(QWidget):
     def __init__(self) -> None:
         super().__init__()
@@ -390,7 +355,7 @@ class MainWindow(QWidget):
 
         self.thread_pool = QThreadPool.globalInstance()
 
-        # Widgets
+
         self.image_list = QListWidget()
         self.image_list.setSelectionMode(QListWidget.SelectionMode.ExtendedSelection)
         self.image_list.setMinimumHeight(220)
@@ -398,8 +363,8 @@ class MainWindow(QWidget):
         self.btn_add = QPushButton("Add Images…")
         self.btn_clear = QPushButton("Clear List")
 
-        self.chk_method_a = QCheckBox("Method A – 2D→3D reconstruction (COLMAP)")
-        self.chk_method_b = QCheckBox("Method B – Canny edges (OpenCV)")
+        self.chk_method_a = QCheckBox("Method A 2D→3D reconstruction (COLMAP)")
+        self.chk_method_b = QCheckBox("Method B Nerf Studio Method")
         self.chk_method_a.setChecked(True)
 
         self.lbl_count = QLabel("No images selected.")
@@ -413,7 +378,6 @@ class MainWindow(QWidget):
         self.log_view.setReadOnly(True)
         self.log_view.setPlaceholderText("Logs will appear here…")
 
-        # Layouts
         top_btns = QHBoxLayout()
         top_btns.addWidget(self.btn_add)
         top_btns.addWidget(self.btn_clear)
@@ -439,17 +403,15 @@ class MainWindow(QWidget):
 
         self.setLayout(layout)
 
-        # Connections
+
         self.btn_add.clicked.connect(self.add_images)
         self.btn_clear.clicked.connect(self.clear_images)
         self.btn_submit.clicked.connect(self.on_submit)
 
-        # State
+
         self.output_dir = os.path.abspath("outputs")
 
-    # -------------------------
-    # UI helpers
-    # -------------------------
+
     def add_images(self) -> None:
         files, _ = QFileDialog.getOpenFileNames(
             self,
@@ -477,7 +439,7 @@ class MainWindow(QWidget):
 
     def append_log(self, text: str) -> None:
         self.log_view.append(text)
-        # Autoscroll
+
         self.log_view.verticalScrollBar().setValue(self.log_view.verticalScrollBar().maximum())
 
     def on_submit(self) -> None:
