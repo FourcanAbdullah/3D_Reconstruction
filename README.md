@@ -3,7 +3,7 @@ What it is
 How to run with VS Code Dev Containers
 
 How to build/run with Docker
-
+Make sure to run "xhost +local:docker" in host machine to see colmap gui
 GPU/CPU behavior
 
 WSLg vs X11 notes

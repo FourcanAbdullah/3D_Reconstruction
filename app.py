@@ -266,38 +266,143 @@ def run_method_a(image_paths: List[str], output_dir: str, log: Callable[[str], N
 
 
 def run_method_b(image_paths: List[str], output_dir: str, log: Callable[[str], None]) -> List[str]:
-    
+    """
+    Nerfstudio pipeline (2025-current):
+      1) ns-process-data images  -> {processed}/
+      2) ns-train nerfacto       -> {training}/exp/timestamp/
+      3) ns-export pointcloud/poisson/cameras
+    """
+    import shutil, subprocess, os, time, uuid
+
     outputs: List[str] = []
-    log("[Method B] Starting...")
-    if not image_paths:
-        log("[Method B] No images provided.")
+    if len(image_paths) < 3:
+        log("[NeRF] Need at least 3 images.")
         return outputs
 
-    os.makedirs(output_dir, exist_ok=True)
+    # sanity checks
+    for bin_name in ("ns-process-data", "ns-train", "ns-export"):
+        if shutil.which(bin_name) is None:
+            log(f"[NeRF] '{bin_name}' not found. Is nerfstudio installed in this environment?")
+            return outputs
 
-    for i, path in enumerate(image_paths, 1):
-        base = os.path.splitext(os.path.basename(path))[0]
-        out_path = os.path.join(output_dir, f"{base}_edges.png")
-        if not CV2_AVAILABLE:
-            log("[Method B] OpenCV not installed. Skipping actual processing. Run 'pip install opencv-python' to enable.")
-            log(f"[Method B] Would process: {os.path.basename(path)} → {out_path}")
-            time.sleep(0.15)
-            continue
+    # workspace layout
+    run_id = time.strftime("%Y%m%d-%H%M%S") + "-" + uuid.uuid4().hex[:6]
+    ws = os.path.join(output_dir, f"nerfstudio_run_{run_id}")
+    raw_dir = os.path.join(ws, "raw_images")
+    proc_dir = os.path.join(ws, "processed")
+    train_dir = os.path.join(ws, "training")   # we'll direct ns-train here
+    export_dir = os.path.join(ws, "exports")
+    os.makedirs(raw_dir, exist_ok=True)
+    os.makedirs(proc_dir, exist_ok=True)
+    os.makedirs(train_dir, exist_ok=True)
+    os.makedirs(export_dir, exist_ok=True)
+
+    # copy inputs
+    log("[NeRF] Copying input images …")
+    copied = 0
+    for p in image_paths:
         try:
-            img = cv2.imread(path, cv2.IMREAD_GRAYSCALE)
-            if img is None:
-                log(f"[Method B] Could not open: {path}")
-                continue
-            edges = cv2.Canny(img, 100, 200)
-            cv2.imwrite(out_path, edges)
-            outputs.append(out_path)
-            log(f"[Method B] Saved edges → {out_path} ({i}/{len(image_paths)})")
+            shutil.copy2(p, os.path.join(raw_dir, os.path.basename(p)))
+            copied += 1
         except Exception as e:
-            log(f"[Method B] Failed on {path}: {e}")
-        time.sleep(0.05)
+            log(f"[NeRF] Failed to copy {p}: {e}")
+    if copied < 3:
+        log("[NeRF] Fewer than 3 readable images after copy.")
+        return outputs
 
-    log("[Method B] Done.")
+    def stream(cmd: List[str]) -> int:
+        log("[NeRF] $ " + " ".join(cmd))
+        try:
+            proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+            assert proc.stdout is not None
+            for line in proc.stdout:
+                if line := line.rstrip("\n"):
+                    log(f"[NeRF] {line}")
+            return proc.wait()
+        except Exception as e:
+            log(f"[NeRF] Failed to run: {e}")
+            return 1
+
+    # 1) Process data (uses COLMAP + FFmpeg). Keep it minimal & future-proof.
+    #    Tip: add '--matching-method exhaustive' if you want stronger matching (slower).  :contentReference[oaicite:3]{index=3}
+    if stream([
+        "ns-process-data", "images",
+        "--data", raw_dir,
+        "--output-dir", proc_dir,
+        "--sfm-tool", "colmap",
+        "--matching-method", "exhaustive",
+        "--refine-intrinsics",
+        "--gpu",
+        "--verbose",
+    ]) != 0:
+        log("[NeRF] ns-process-data failed.")
+        return outputs
+
+    # 2) Train nerfacto (headless). Dataparser defaults to nerfstudio-data.  :contentReference[oaicite:4]{index=4}
+    exp_name = f"nerfacto_{run_id}"
+    if stream([
+        "ns-train", "nerfacto",
+        "--data", proc_dir,
+        "--output-dir", train_dir,
+        "--experiment-name", exp_name,
+        "--max-num-iterations", "8000",
+        "--steps-per-eval-image", "2000",
+        "--vis", "tensorboard",          # viewer alternatives: viewer, wandb, comet  :contentReference[oaicite:5]{index=5}
+        # For huge datasets, consider: "--pipeline.datamanager.load_from_disk", "true"  :contentReference[oaicite:6]{index=6}
+    ]) != 0:
+        log("[NeRF] ns-train failed.")
+        return outputs
+
+    # Resolve the latest run folder: training/<exp_name>/<timestamp>/
+    ckpt_root = os.path.join(train_dir, exp_name)
+    if not os.path.isdir(ckpt_root):
+        log(f"[NeRF] Training output not found at {ckpt_root}")
+        return outputs
+    subdirs = sorted(
+        [d for d in os.listdir(ckpt_root) if os.path.isdir(os.path.join(ckpt_root, d))]
+    )
+    if not subdirs:
+        log(f"[NeRF] No run folder within {ckpt_root}")
+        return outputs
+    run_folder = os.path.join(ckpt_root, subdirs[-1])
+    outputs.append(run_folder)
+    log(f"[NeRF] Trained run → {run_folder}")
+
+    # 3) Export geometry & cameras  (pointcloud/.ply, poisson/.obj, cameras.json).  :contentReference[oaicite:7]{index=7}
+    cfg = os.path.join(run_folder, "config.yml")
+    pc_out = os.path.join(export_dir, "nerfstudio_pointcloud.ply")
+    if stream([
+        "ns-export", "pointcloud",
+        "--load-config", cfg,
+        "--output-dir", pc_out,
+        "--num-points", "2000000"
+    ]) == 0 and os.path.exists(pc_out):
+        outputs.append(pc_out)
+        log(f"[NeRF] Point cloud → {pc_out}")
+
+    mesh_out = os.path.join(export_dir, "nerfstudio_mesh_poisson.obj")
+    if stream([
+        "ns-export", "poisson",
+        "--load-config", cfg,
+        "--output-dir", mesh_out,
+        "--num-points", "3000000"
+    ]) == 0 and os.path.exists(mesh_out):
+        outputs.append(mesh_out)
+        log(f"[NeRF] Poisson mesh → {mesh_out}")
+
+    cams_out = os.path.join(export_dir, "nerfstudio_cameras.json")
+    if stream([
+        "ns-export", "cameras",
+        "--load-config", cfg,
+        "--output-dir", cams_out
+    ]) == 0 and os.path.exists(cams_out):
+        outputs.append(cams_out)
+        log(f"[NeRF] Cameras → {cams_out}")
+
+    log("[NeRF] Done.")
     return outputs
+
+
 
 
 class WorkerSignals(QObject):
@@ -327,14 +432,23 @@ class ProcessorWorker(QRunnable):
     def run(self) -> None:
         try:
             started = datetime.now()
+            stamp = started.strftime("%Y%m%d-%H%M%S")        # ← run timestamp
             self.log("Processing started...")
+
+            # Base run folder: outputs/run_YYYYmmdd-HHMMSS
+            base_run_dir = os.path.join(self.output_dir, f"run_{stamp}")
+            os.makedirs(base_run_dir, exist_ok=True)
+            self.log(f"[Run] Output root → {base_run_dir}")
+
             generated: List[str] = []
 
             if self.use_method_a:
-                generated += run_method_a(self.image_paths, os.path.join(self.output_dir, "method_a"), self.log)
+                out_a = os.path.join(base_run_dir, "method_a")
+                generated += run_method_a(self.image_paths, out_a, self.log)
 
             if self.use_method_b:
-                generated += run_method_b(self.image_paths, os.path.join(self.output_dir, "method_b"), self.log)
+                out_b = os.path.join(base_run_dir, "method_b")
+                generated += run_method_b(self.image_paths, out_b, self.log)
 
             if not (self.use_method_a or self.use_method_b):
                 self.log("No methods selected. Nothing to do.")
@@ -477,7 +591,7 @@ class MainWindow(QWidget):
         worker.signals.progress.connect(self.append_log)
         worker.signals.finished.connect(lambda msg: self.on_finished(msg))
         worker.signals.error.connect(lambda err: self.on_error(err))
-
+        self.append_log(f"Base output folder: {self.output_dir}")
         self.btn_submit.setEnabled(False)
         self.append_log("Submitting job to background thread…")
         self.thread_pool.start(worker)

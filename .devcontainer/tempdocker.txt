@@ -11,9 +11,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxcb-keysyms1 libxcb-render-util0 libgl1 libglu1-mesa mesa-utils xauth \
     qtwayland5 libegl1 libx11-6 libxext6 libxrender1 libxi6 libxrandr2 libxinerama1 \
     libxfixes3 libsm6 libice6 libfontconfig1 libfreetype6 \
-    libxcb1 libx11-xcb1 libglib2.0-0 meshlab && \
-    rm -rf /var/lib/apt/lists/*
-
+ && rm -rf /var/lib/apt/lists/*
 
 # --- Micromamba (lightweight conda) ---
 ENV MAMBA_ROOT_PREFIX=/opt/conda
