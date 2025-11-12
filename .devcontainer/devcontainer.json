@@ -11,10 +11,19 @@
   "runArgs": [
     "--gpus=all",
     "-v", "/mnt/wslg:/mnt/wslg",
-    "-v", "/tmp/.X11-unix:/tmp/.X11-unix",
-    "-v", "/home/fourcanabdullah/Documents/Ignatius:/data/images:rw"
+    "-v", "/tmp/.X11-unix:/tmp/.X11-unix"
+    //"-v", "/home/fourcanabdullah/Documents/Ignatius:/data/images:rw"
 
   ],
+  "mounts": [
+    // macOS/Linux
+    "type=bind,source=${localEnv:HOME},target=/hosthome,consistency=cached,readonly"
+    // Windows fallback (USERPROFILE)
+    //"type=bind,source=${localEnv:USERPROFILE},target=/hosthome_win,consistency=cached,readonly"
+  ],
+  "remoteEnv": {
+    "APP_DEFAULT_IMPORT_DIR": "/hosthome"
+  },
 
 
   "containerEnv": {

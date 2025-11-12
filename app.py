@@ -5,6 +5,8 @@ import subprocess
 import os
 import sys
 import time
+import json
+from contextlib import contextmanager
 from datetime import datetime
 from typing import List, Callable, Tuple, Optional
 import uuid
@@ -37,6 +39,27 @@ try:
     CV2_AVAILABLE = True
 except Exception:
     CV2_AVAILABLE = False
+
+class StepTimer:
+    """Utility to measure and record named step durations."""
+    def __init__(self):
+        self.records = []
+        self._start = None
+
+    @contextmanager
+    def track(self, name: str):
+        import time
+        start = time.time()
+        yield
+        elapsed = time.time() - start
+        self.records.append((name, elapsed))
+
+    def summary(self):
+        total = sum(t for _, t in self.records)
+        return {
+            "steps": [{"name": n, "seconds": round(t, 2)} for n, t in self.records],
+            "total_seconds": round(total, 2)
+        }
 
 def run_method_a(image_paths: List[str], output_dir: str, log: Callable[[str], None]) -> List[str]:
     """
@@ -350,8 +373,8 @@ def run_method_b(image_paths: List[str], out_dir: str, log: Callable[[str], None
         "--output-dir", train_dir,
         "--experiment-name", exp_name,
         "--timestamp", run_id,
-        "--max-num-iterations", "8000",
-        "--steps-per-eval-image", "2000",
+        "--max-num-iterations", "20000",
+        "--steps-per-eval-image", "3000",
         "--vis", "tensorboard",
         "--pipeline.model.predict-normals", "True",
         # deterministic run folder
@@ -379,7 +402,7 @@ def run_method_b(image_paths: List[str], out_dir: str, log: Callable[[str], None
         "ns-export", "pointcloud",
         "--load-config", cfg,
         "--output-dir", pc_dir,
-        "--num-points", "2000000",
+        "--num-points", "8000000",
     ]) == 0:
         for cand in ("point_cloud.ply", "pointcloud.ply", "cloud.ply"):
             p = os.path.join(pc_dir, cand)
@@ -395,7 +418,7 @@ def run_method_b(image_paths: List[str], out_dir: str, log: Callable[[str], None
         "ns-export", "poisson",
         "--load-config", cfg,
         "--output-dir", mesh_dir,
-        "--num-points", "3000000",
+        "--num-points", "8000000",
     ]) == 0:
         for cand in ("mesh.obj", "poisson_mesh.obj", "mesh_poisson.obj", "mesh.ply"):
             p = os.path.join(mesh_dir, cand)
@@ -479,16 +502,27 @@ class ProcessorWorker(QRunnable):
         except Exception as e:
             self.signals.error.emit(str(e))
 
-
+def _default_import_root() -> str:
+    # 1) Prefer an explicit env from devcontainer.json
+    env = os.environ.get("APP_DEFAULT_IMPORT_DIR")
+    if env and os.path.isdir(env):
+        return env
+        # 2) Common bind targets we suggested
+    for cand in ("/hosthome", "/hosthome_win", "/imports"):
+        if os.path.isdir(cand):
+            return cand
+        # 3) Fallback to the container user's home
+    home = os.path.expanduser("~")
+    return home if os.path.isdir(home) else "/"
 
 class MainWindow(QWidget):
     def __init__(self) -> None:
         super().__init__()
-        self.setWindowTitle("2D to 3D Resonstruction Comparer")
+        self.setWindowTitle("2D to 3D Reconstruction Comparer")
         self.resize(900, 600)
 
         self.thread_pool = QThreadPool.globalInstance()
-
+        self.thread_pool.setMaxThreadCount(1)
 
         self.image_list = QListWidget()
         self.image_list.setSelectionMode(QListWidget.SelectionMode.ExtendedSelection)
@@ -507,6 +541,7 @@ class MainWindow(QWidget):
 
         self.btn_submit = QPushButton("Submit")
         self.btn_submit.setDefault(True)
+        self.btn_open_out = QPushButton("Open Output Folder")
 
         self.log_view = QTextEdit()
         self.log_view.setReadOnly(True)
@@ -529,7 +564,10 @@ class MainWindow(QWidget):
         left.addWidget(self.lbl_count)
         left.addWidget(methods_group)
         left.addWidget(self.lbl_output)
-        left.addWidget(self.btn_submit)
+        btn_row = QHBoxLayout()
+        btn_row.addWidget(self.btn_submit)
+        btn_row.addWidget(self.btn_open_out)
+        left.addLayout(btn_row)
 
         layout = QHBoxLayout()
         layout.addLayout(left, 2)
@@ -541,16 +579,17 @@ class MainWindow(QWidget):
         self.btn_add.clicked.connect(self.add_images)
         self.btn_clear.clicked.connect(self.clear_images)
         self.btn_submit.clicked.connect(self.on_submit)
-
+        self.btn_open_out.clicked.connect(self.open_output_dir)
 
         self.output_dir = os.path.abspath("outputs")
-
-
+        os.makedirs(self.output_dir, exist_ok=True)
+    
     def add_images(self) -> None:
+        start_dir = _default_import_root()
         files, _ = QFileDialog.getOpenFileNames(
             self,
             "Choose images",
-            "/data/images",
+            start_dir,
             "Images (*.png *.jpg *.jpeg *.bmp *.tif *.tiff);;All files (*.*)",
         )
         for f in files:
@@ -575,7 +614,14 @@ class MainWindow(QWidget):
         self.log_view.append(text)
 
         self.log_view.verticalScrollBar().setValue(self.log_view.verticalScrollBar().maximum())
-
+        
+    def _append_log_file(self, base_run_dir: str, text: str) -> None:
+        try:
+            with open(os.path.join(base_run_dir, "run.log"), "a", encoding="utf-8") as f:
+                f.write(text + "\n")
+        except Exception:
+            pass
+        
     def on_submit(self) -> None:
         n = self.image_list.count()
         if n < 3:
@@ -608,7 +654,15 @@ class MainWindow(QWidget):
             use_method_b=self.chk_method_b.isChecked(),
             output_dir=self.output_dir,
         )
-        worker.signals.progress.connect(self.append_log)
+
+        self._current_run_dir = None
+        def tee_progress(msg: str):
+            self.append_log(msg)
+            if msg.startswith("[Run] Output root → "):
+                self._current_run_dir = msg.split("→",1)[1].strip()
+            if self._current_run_dir:
+                self._append_log_file(self._current_run_dir, msg)
+        worker.signals.progress.connect(tee_progress)
         worker.signals.finished.connect(lambda msg: self.on_finished(msg))
         worker.signals.error.connect(lambda err: self.on_error(err))
         self.append_log(f"Base output folder: {self.output_dir}")
@@ -623,7 +677,18 @@ class MainWindow(QWidget):
     def on_error(self, err: str) -> None:
         self.append_log(f"ERROR: {err}")
         self.btn_submit.setEnabled(True)
-
+        
+    def open_output_dir(self) -> None:
+        path = self.output_dir
+        try:
+            if sys.platform.startswith("darwin"):
+                subprocess.Popen(["open", path])
+            elif os.name == "nt":
+                os.startfile(path)  # type: ignore[attr-defined]
+            else:
+                subprocess.Popen(["xdg-open", path])
+        except Exception as e:
+            QMessageBox.information(self, "Open Folder", f"Folder: {path}\n\n({e})")
 
 def main() -> int:
     app = QApplication(sys.argv)
