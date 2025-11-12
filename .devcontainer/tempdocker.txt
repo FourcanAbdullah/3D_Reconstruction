@@ -1,0 +1,49 @@
+some things that need to be done:
+ install pip install git+https://github.com/NVlabs/tiny-cuda-nn/
+ so that nerf can be faster.
+
+ Do 10 images with colmap and 10 with nerf
+ use the tanks and temple library
+
+ Clean the app.py and use modern software practices for it.
+ --pipeline.model.predict-normals True
+ The number of rays per batch influences geometric detail. Example in docs: --pipeline.datamanager.train-num-rays-per-batch 4096
+ From the ns-export pointcloud --help: you’ll see flags such as --num-points, --remove-outliers, --save-world-frame, etc. 
+GitHub
++1
+
+Some examples to tune:
+
+--num-points N — larger means denser cloud (but also slower, heavier).
+
+--remove-outliers True — helpful to clean up stray points.
+
+--save-world-frame True — to keep the coordinate system aligned with your scene.
+
+--normal-method open3d — if you want normals computed. (See the GitHub issue example)
+
+Use model: nerfacto-big (or nerfacto-huge)
+ns-train nerfacto --data PROCESSED_DIR --model nerfacto-big \
+  --pipeline.model.predict-normals True \
+  --pipeline.num-iterations 200 000 \
+  --pipeline.steps-per-eval-image 5000 \
+  --vis tensorboard
+ns-process-data images --data /path/to/Tanks/images \
+  --output-dir /path/to/processed --matching-method exhaustive --refine-intrinsics True
+
+ns-export pointcloud --load-config /path/to/config.yml \
+  --output-dir /path/to/export \
+  --num-points 5_000_000 \
+  --remove-outliers True \
+  --save-world-frame True
+If metric accuracy is desired (not just visual): run a scale calibration step (e.g., pick two known landmarks in the scene whose distance is known, scale the model accordingly).
+
+Monitor training losses, and especially look at how well the model reconstructs geometry (not just render quality). If you see blurry or floating geometry, consider increasing the number of depth samples or using more training images.
+
+Use dense viewpoint coverage: make sure the Tanks scene subset you’re using has images from multiple vantage points, not just forward-facing.
+
+ns-train nerfacto-big \
+  --data path/to/processed/tanks \
+  --pipeline.datamanager.train-num-rays-per-batch 8192 \
+  --pipeline.max-num-iterations 200000 \
+  --vis tensorboard

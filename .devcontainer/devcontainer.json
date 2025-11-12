@@ -2,19 +2,30 @@
   "name": "COLMAP + MeshLab (GPU/CPU)",
   "build": {
     "dockerfile": "Dockerfile",
-    "context": ".."                 // build context = project root (so COPY requirements.txt works)
+    "context": ".."                 
   },
   "workspaceFolder": "/workspace",
   "workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind,consistency=cached",
 
-  // Pass host GPU & GUI sockets into the container (safe on non-GPU systems too)
+
   "runArgs": [
     "--gpus=all",
     "-v", "/mnt/wslg:/mnt/wslg",
     "-v", "/tmp/.X11-unix:/tmp/.X11-unix"
-  ],
+    //"-v", "/home/fourcanabdullah/Documents/Ignatius:/data/images:rw"
 
-  // Inherit WSLg GUI env so PyQt / MeshLab windows show on Windows
+  ],
+  "mounts": [
+    // macOS/Linux
+    "type=bind,source=${localEnv:HOME},target=/hosthome,consistency=cached,readonly"
+    // Windows fallback (USERPROFILE)
+    //"type=bind,source=${localEnv:USERPROFILE},target=/hosthome_win,consistency=cached,readonly"
+  ],
+  "remoteEnv": {
+    "APP_DEFAULT_IMPORT_DIR": "/hosthome"
+  },
+
+
   "containerEnv": {
     "DISPLAY": "${localEnv:DISPLAY}",
     "WAYLAND_DISPLAY": "${localEnv:WAYLAND_DISPLAY}",
@@ -23,10 +34,11 @@
     "QT_QPA_PLATFORM": "wayland;xcb"
   },
 
-  // Re-run pip if you tweak requirements.txt later
-  "postCreateCommand": "pip install -r requirements.txt || true",
 
-  // Quality of life
+
+  "postCreateCommand": "apt-get update && apt-get install -y libxcb-cursor0 libxkbcommon-x11-0 libxcb-xinerama0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-render-util0 libgl1 libglu1-mesa mesa-utils xauth && pip install -r requirements.txt",
+
+
   "features": {
     "ghcr.io/devcontainers/features/common-utils:2": {}
   }
