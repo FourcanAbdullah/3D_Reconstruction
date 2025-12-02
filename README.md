@@ -1,6 +1,11 @@
 What it is
 
 How to run with VS Code Dev Containers
+How to Run in Ubuntu:
+After Cloning the Repo, Open the Folder in VSCode then make sure to install the Dev Containers Extension in VScode. Also Install Docker Version 17.12.0 or later and make sure the user is in the docker profile.(you may need to log out and log in for changes to take place)
+Make sure that you have nvidia docker, nvidia smi, nvidia-cuda-toolkit installed.
+
+Then in VScode do ctrl + alt + P and run Build Container
 
 How to build/run with Docker
 sudo apt install x11-xserver-utils
