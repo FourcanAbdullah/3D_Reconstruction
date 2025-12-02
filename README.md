@@ -133,13 +133,5 @@ export LIBGL_ALWAYS_INDIRECT=1
 
 ---
 
-```
 
----
-
-Copy and paste **everything inside the code block** into your `README.md`.  
-It is full Markdown and will render correctly on GitHub.
-
-If you want a version **without the outer code block**, I can provide that too.
-```
 
