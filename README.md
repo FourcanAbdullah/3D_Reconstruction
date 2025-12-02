@@ -1,10 +1,15 @@
-What it is
 
-How to run with VS Code Dev Containers
-How to Run in Ubuntu:
-After Cloning the Repo, Open the Folder in VSCode then make sure to install the Dev Containers Extension in VScode. Also Install Docker Version 17.12.0 or later and make sure the user is in the docker profile.(you may need to log out and log in for changes to take place)
-Make sure that you have nvidia docker, nvidia smi, nvidia-cuda-toolkit installed in the main system.
-# Add NVIDIA's package repositories
+#How to Run in Ubuntu:
+##Required to have GPU to work!
+##After Cloning the Repo, Open the Folder in VSCode then make sure to install the Dev Containers Extension in VScode. Also Install Docker Version 17.12.0 or later and make sure the user is in the docker profile.(you may need to log out and log in for changes to take place)
+##Make sure that you have nvidia docker, nvidia smi, nvidia-cuda-toolkit installed in the main system.
+##Before opening the devcontainer on a machine with a GPU, go to the .devcontainer folder
+open devcontainer.json
+inside "runArgs":[]
+add to the first line: "--gpus=all", 
+--On a CPU-only / old-GPU machine:
+--remove:  "--gpus=all",
+##How I added added GPU to container (if you want to use this make sure you are outside of container, in root folder.) there are tuturials to set this up below.
 sudo mkdir -p /etc/systemd/system/docker.service.d
 sudo tee /etc/systemd/system/docker.service.d/override.conf > /dev/null <<EOF
 [Service]
@@ -12,15 +17,11 @@ ExecStart=
 ExecStart=/usr/bin/dockerd --host=fd:// --add-runtime=nvidia=/usr/bin/nvidia-container-runtime
 EOF
 
-# Download and install the GPG key for NVIDIA's repository
 curl -s -L https://nvidia.github.io/nvidia-docker/gpgkey | sudo apt-key add -
 
-# Add the NVIDIA package repositories (replace 'ubuntu18.04' with your version, e.g., 'ubuntu20.04')
 distribution=$(. /etc/os-release;echo $ID$VERSION_ID)
 curl -s -L https://nvidia.github.io/nvidia-docker/$distribution/nvidia-docker.list \
 | sudo tee /etc/apt/sources.list.d/nvidia-docker.list
-
-# Update and install NVIDIA Docker toolkit
 sudo apt-get update
 sudo apt-get install -y nvidia-docker2
 sudo systemctl restart docker
@@ -29,14 +30,17 @@ nvidia-smi
 
 sudo apt-get install -y nvidia-cuda-toolkit
 
-Then in VScode do ctrl + alt + P and run Build Container
+Then in VScode do ctrl + shift + P and run Build Container
+###Outside the Container, in the main computer run the following to see GUI:
 
-How to build/run with Docker
 sudo apt install x11-xserver-utils
-Make sure to run "xhost +local:docker" in host machine to see colmap gui
-GPU/CPU behavior
+xhost +local:docker
 
-WSLg vs X11 notes
+##Some tutorials on installing and making visible Nvidia GPU in docker for your reference:
+https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html
+https://www.howtogeek.com/devops/how-to-use-an-nvidia-gpu-with-docker-containers/
+https://saturncloud.io/blog/how-to-use-gpu-from-a-docker-container-a-guide-for-data-scientists-and-software-engineers/
+https://www.devzero.io/blog/docker-gpu
 
 SSH:
 To display anything run:
