@@ -3,6 +3,7 @@ What it is
 How to run with VS Code Dev Containers
 
 How to build/run with Docker
+sudo apt install x11-xserver-utils
 Make sure to run "xhost +local:docker" in host machine to see colmap gui
 GPU/CPU behavior
 

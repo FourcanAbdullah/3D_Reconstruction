@@ -282,17 +282,19 @@ def run_method_a(image_paths: List[str], output_dir: str, log: Callable[[str], N
     log("[SfM] Done.")
     return outputs
 
+
 def run_method_b(image_paths: List[str], out_dir: str, log: Callable[[str], None] = print) -> List[str]:
     """
     Nerfstudio (NeRF) pipeline:
-      - copies inputs (index-prefixed) into raw_images/
+      - copies inputs (keeping original filenames) into raw_images/
       - ns-process-data images -> processed/
-      - ns-train nerfacto -> training/nerfacto/<run_id>/config.yml   (deterministic via --timestamp)
+      - ns-train nerfacto -> training/nerfacto/<run_id>/config.yml
       - ns-export (pointcloud, poisson, cameras) -> exports/<subdir>/
+
     Returns a list of generated artifact file paths.
     """
     outputs: List[str] = []
-
+    image_paths = sorted(image_paths)
     def which_ok(name: str) -> bool:
         return shutil.which(name) is not None
 
@@ -310,7 +312,6 @@ def run_method_b(image_paths: List[str], out_dir: str, log: Callable[[str], None
             return 1
 
     def find_ns_config(train_root: str) -> Optional[str]:
-        """Search for a config.yml under train_root; prefer deeper paths and ones containing 'nerfacto'."""
         hits = []
         for root, _, files in os.walk(train_root):
             if "config.yml" in files:
@@ -320,7 +321,7 @@ def run_method_b(image_paths: List[str], out_dir: str, log: Callable[[str], None
         hits.sort(key=lambda p: (("nerfacto" not in p), -p.count(os.sep)))
         return hits[0]
 
-    # sanity
+    # Sanity check
     if len(image_paths) < 3:
         log("[NeRF] Need at least 3 images.")
         return outputs
@@ -329,9 +330,9 @@ def run_method_b(image_paths: List[str], out_dir: str, log: Callable[[str], None
             log(f"[NeRF] '{bin_name}' not found in PATH.")
             return outputs
 
-    # workspace
-    run_id = time.strftime("%Y%m%d-%H%M%S") + "-" + uuid.uuid4().hex[:6]  # used for --timestamp and pathing
-    ws = out_dir  # caller creates a fresh run/method dir
+    # Workspace
+    run_id = time.strftime("%Y%m%d-%H%M%S") + "-" + uuid.uuid4().hex[:6]
+    ws = out_dir
     raw_dir = os.path.join(ws, "raw_images")
     proc_dir = os.path.join(ws, "processed")
     train_dir = os.path.join(ws, "training")
@@ -341,31 +342,31 @@ def run_method_b(image_paths: List[str], out_dir: str, log: Callable[[str], None
     os.makedirs(train_dir, exist_ok=True)
     os.makedirs(export_dir, exist_ok=True)
 
-    # C) copy images with index prefix to avoid name collisions
-    for i, src in enumerate(image_paths):
-        base = os.path.basename(src)
-        dst = os.path.join(raw_dir, f"{i:03d}__{base}")
+    # C) Copy images *without renaming*
+    for src in image_paths:
+        dst = os.path.join(raw_dir, os.path.basename(src))
         try:
             shutil.copy2(src, dst)
         except Exception as e:
             log(f"[NeRF] Failed to copy {src} -> {dst}: {e}")
             return outputs
 
-    # 1) ns-process-data (images → processed dataset)
+    # 1) Stable ns-process-data (NeRF-Studio’s own COLMAP workflow)
     if stream([
         "ns-process-data", "images",
         "--data", raw_dir,
         "--output-dir", proc_dir,
         "--sfm-tool", "colmap",
-        "--matching-method", "exhaustive",
+        "--matching-method", "sequential",
         "--refine-intrinsics",
+        "--num-downscales", "2",
         "--gpu",
         "--verbose",
     ]) != 0:
         log("[NeRF] ns-process-data failed.")
         return outputs
 
-    # 2) ns-train (nerfacto) with deterministic timestamp (B)
+    # 2) ns-train nerfacto
     exp_name = "nerfacto"
     if stream([
         "ns-train", "nerfacto",
@@ -377,25 +378,20 @@ def run_method_b(image_paths: List[str], out_dir: str, log: Callable[[str], None
         "--steps-per-eval-image", "3000",
         "--vis", "tensorboard",
         "--pipeline.model.predict-normals", "True",
-        # deterministic run folder
-        # Optional knobs (uncomment/tune as needed):
-        # "--viewer.quit-on-train-completion", "True",
-        # "--max-num-iterations", "20000",
     ]) != 0:
         log("[NeRF] ns-train failed.")
         return outputs
 
-    # 3) Resolve config.yml (B)
+    # 3) Locate config.yml
     cfg = os.path.join(train_dir, exp_name, run_id, "config.yml")
     if not os.path.exists(cfg):
-        # Fallback search in case NS version changes directory structure
         cfg = find_ns_config(train_dir)
     if not cfg or not os.path.exists(cfg):
         log("[NeRF] Could not locate config.yml under training/.")
         return outputs
     log(f"[NeRF] Using config: {cfg}")
 
-    # 4) ns-export pointcloud (A: directory output, then pick produced file)
+    # 4) Export pointcloud
     pc_dir = os.path.join(export_dir, "pointcloud")
     os.makedirs(pc_dir, exist_ok=True)
     if stream([
@@ -411,7 +407,7 @@ def run_method_b(image_paths: List[str], out_dir: str, log: Callable[[str], None
                 log(f"[NeRF] Point cloud → {p}")
                 break
 
-    # 5) ns-export poisson mesh (A)
+    # 5) Export Poisson mesh
     mesh_dir = os.path.join(export_dir, "poisson")
     os.makedirs(mesh_dir, exist_ok=True)
     if stream([
@@ -427,7 +423,7 @@ def run_method_b(image_paths: List[str], out_dir: str, log: Callable[[str], None
                 log(f"[NeRF] Poisson mesh → {p}")
                 break
 
-    # 6) ns-export cameras (A)
+    # 6) Export cameras
     cams_dir = os.path.join(export_dir, "cameras")
     os.makedirs(cams_dir, exist_ok=True)
     if stream([
@@ -443,7 +439,6 @@ def run_method_b(image_paths: List[str], out_dir: str, log: Callable[[str], None
                 break
 
     return outputs
-
 
 
 

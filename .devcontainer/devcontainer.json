@@ -2,42 +2,31 @@
   "name": "COLMAP + MeshLab (GPU/CPU)",
   "build": {
     "dockerfile": "Dockerfile",
-    "context": ".."                 
+    "context": ".."
   },
   "workspaceFolder": "/workspace",
   "workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind,consistency=cached",
 
-
-  "runArgs": [
+"runArgs": [
+  "--gpus=all",
     "--gpus=all",
+    "-v", "/tmp/.X11-unix:/tmp/.X11-unix",
     "-v", "/mnt/wslg:/mnt/wslg",
-    "-v", "/tmp/.X11-unix:/tmp/.X11-unix"
-    //"-v", "/home/fourcanabdullah/Documents/Ignatius:/data/images:rw"
+    "--env=DISPLAY",
+    "--env=WAYLAND_DISPLAY",
+    "--env=XDG_RUNTIME_DIR",
+    "--env=PULSE_SERVER"
+],
 
-  ],
   "mounts": [
-    // macOS/Linux
     "type=bind,source=${localEnv:HOME},target=/hosthome,consistency=cached,readonly"
-    // Windows fallback (USERPROFILE)
-    //"type=bind,source=${localEnv:USERPROFILE},target=/hosthome_win,consistency=cached,readonly"
   ],
-  "remoteEnv": {
-    "APP_DEFAULT_IMPORT_DIR": "/hosthome"
-  },
-
 
   "containerEnv": {
-    "DISPLAY": "${localEnv:DISPLAY}",
-    "WAYLAND_DISPLAY": "${localEnv:WAYLAND_DISPLAY}",
-    "XDG_RUNTIME_DIR": "/mnt/wslg/runtime-dir",
-    "PULSE_SERVER": "/mnt/wslg/PulseServer",
-    "QT_QPA_PLATFORM": "wayland;xcb"
+    "QT_QPA_PLATFORM_PLUGIN_PATH": "/opt/conda/envs/ns/lib/python3.10/site-packages/cv2/qt/plugins"
   },
 
-
-
   "postCreateCommand": "apt-get update && apt-get install -y libxcb-cursor0 libxkbcommon-x11-0 libxcb-xinerama0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-render-util0 libgl1 libglu1-mesa mesa-utils xauth && pip install -r requirements.txt",
-
 
   "features": {
     "ghcr.io/devcontainers/features/common-utils:2": {}
