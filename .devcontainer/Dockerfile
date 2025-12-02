@@ -51,8 +51,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Micromamba from the latest stable release
-RUN curl -L https://micromamba.snakepit.net/api/micromamba/linux-64/latest \
-    | tar -xj -C /usr/local/bin --strip-components=1 bin/micromamba
+RUN curl -L https://github.com/mamba-org/micromamba-releases/releases/latest/download/micromamba-linux-64 \
+    -o /usr/local/bin/micromamba && \
+    chmod +x /usr/local/bin/micromamba
+
 
 # --- Create env "ns" with Python 3.10 ---
 RUN micromamba create -y -n ns python=3.10 && \
