@@ -10,7 +10,7 @@ from typing import Callable, List, Optional
 
 def run_method_b(image_paths: List[str], out_dir: str, log: Callable[[str], None] = print) -> List[str]:
     """
-    Nerfstudio (NeRF) pipeline:
+    Nerfstudio pipeline:
       - copies inputs (keeping original filenames) into raw_images/
       - ns-process-data images -> processed/
       - ns-train nerfacto -> training/nerfacto/<run_id>/config.yml
@@ -55,7 +55,7 @@ def run_method_b(image_paths: List[str], out_dir: str, log: Callable[[str], None
             log(f"[NeRF] '{bin_name}' not found in PATH.")
             return outputs
 
-    # Workspace
+    # create workspace
     run_id = time.strftime("%Y%m%d-%H%M%S") + "-" + uuid.uuid4().hex[:6]
     ws = out_dir
     raw_dir = os.path.join(ws, "raw_images")
@@ -67,7 +67,7 @@ def run_method_b(image_paths: List[str], out_dir: str, log: Callable[[str], None
     os.makedirs(train_dir, exist_ok=True)
     os.makedirs(export_dir, exist_ok=True)
 
-    # C) Copy images *without renaming*
+    # C) Copy images
     for src in image_paths:
         dst = os.path.join(raw_dir, os.path.basename(src))
         try:
@@ -76,7 +76,7 @@ def run_method_b(image_paths: List[str], out_dir: str, log: Callable[[str], None
             log(f"[NeRF] Failed to copy {src} -> {dst}: {e}")
             return outputs
 
-    # 1) Stable ns-process-data (NeRF-Studio’s own COLMAP workflow)
+    #process-data (NeRF-Studio’s own COLMAP workflow)
     if stream([
         "ns-process-data", "images",
         "--data", raw_dir,
@@ -107,7 +107,7 @@ def run_method_b(image_paths: List[str], out_dir: str, log: Callable[[str], None
         log("[NeRF] ns-train failed.")
         return outputs
 
-    # 3) Locate config.yml
+    #config.yml
     cfg = os.path.join(train_dir, exp_name, run_id, "config.yml")
     if not os.path.exists(cfg):
         cfg = find_ns_config(train_dir)
@@ -116,7 +116,7 @@ def run_method_b(image_paths: List[str], out_dir: str, log: Callable[[str], None
         return outputs
     log(f"[NeRF] Using config: {cfg}")
 
-    # 4) Export pointcloud
+    #Export pointcloud
     pc_dir = os.path.join(export_dir, "pointcloud")
     os.makedirs(pc_dir, exist_ok=True)
     if stream([
@@ -132,7 +132,7 @@ def run_method_b(image_paths: List[str], out_dir: str, log: Callable[[str], None
                 log(f"[NeRF] Point cloud → {p}")
                 break
 
-    # 5) Export Poisson mesh
+    #Export Poisson mesh
     mesh_dir = os.path.join(export_dir, "poisson")
     os.makedirs(mesh_dir, exist_ok=True)
     if stream([
@@ -148,7 +148,7 @@ def run_method_b(image_paths: List[str], out_dir: str, log: Callable[[str], None
                 log(f"[NeRF] Poisson mesh → {p}")
                 break
 
-    # 6) Export cameras
+    #Export cameras
     cams_dir = os.path.join(export_dir, "cameras")
     os.makedirs(cams_dir, exist_ok=True)
     if stream([

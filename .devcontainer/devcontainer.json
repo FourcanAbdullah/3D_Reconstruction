@@ -1,5 +1,5 @@
 {
-  "name": "COLMAP + MeshLab (GPU/CPU)",
+  "name": "COLMAP + Nerf (GPU)",
   "build": {
     "dockerfile": "Dockerfile",
     "context": ".."
@@ -9,14 +9,14 @@
 
 "runArgs": [
   "--gpus=all",
-    "--gpus=all",
-    "-v", "/tmp/.X11-unix:/tmp/.X11-unix",
-    "-v", "/mnt/wslg:/mnt/wslg",
-    "--env=DISPLAY",
-    "--env=WAYLAND_DISPLAY",
-    "--env=XDG_RUNTIME_DIR",
-    "--env=PULSE_SERVER"
+  "-v", "/tmp/.X11-unix:/tmp/.X11-unix",
+  "-v", "/mnt/wslg:/mnt/wslg",
+  "--env=DISPLAY",
+  "--env=WAYLAND_DISPLAY",
+  "--env=XDG_RUNTIME_DIR",
+  "--env=PULSE_SERVER"
 ],
+
 
   "mounts": [
     "type=bind,source=${localEnv:HOME},target=/hosthome,consistency=cached,readonly"

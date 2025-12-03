@@ -35,7 +35,7 @@ def run_method_a(image_paths: List[str], output_dir: str, log: Callable[[str], N
             use_gpu = True
     except Exception:
         pass
-    log(f"[SfM] {'GPU detected → enabling CUDA.' if use_gpu else 'No GPU detected → CPU mode.'}")
+    log(f"[SfM] {'GPU detected → enabling CUDA.' if use_gpu else 'No GPU detected → Will not work'}")
 
     # setup filesystem
     ws = os.path.join(output_dir, "colmap_workspace")
@@ -62,7 +62,7 @@ def run_method_a(image_paths: List[str], output_dir: str, log: Callable[[str], N
         return outputs
 
     threads = max(1, (os.cpu_count() or 2))
-    max_img = os.getenv("COLMAP_MAX_IMAGE_SIZE", "2000")  # lower to lke 1600 for faster in CPU
+    max_img = os.getenv("COLMAP_MAX_IMAGE_SIZE", "2000")  
 
     def stream(args: List[str]) -> int:
         cmd = [colmap_bin] + args
