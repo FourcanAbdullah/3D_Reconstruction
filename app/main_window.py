@@ -15,7 +15,7 @@ from PyQt6.QtWidgets import (
 
 from .utils.paths import default_import_root
 from .workers import ProcessorWorker
-
+from .utils.outputs import open_output_folder
 class MainWindow(QWidget):
     def __init__(self) -> None:
         super().__init__()
@@ -180,13 +180,8 @@ class MainWindow(QWidget):
         self.btn_submit.setEnabled(True)
         
     def open_output_dir(self) -> None:
-        path = self.output_dir
-        try:
-            if sys.platform.startswith("darwin"):
-                subprocess.Popen(["open", path])
-            elif os.name == "nt":
-                os.startfile(path)  # type: ignore[attr-defined]
-            else:
-                subprocess.Popen(["xdg-open", path])
-        except Exception as e:
-            QMessageBox.information(self, "Open Folder", f"Folder: {path}\n\n({e})")
+        if not self.output_dir:
+            self.append_log("[System] No output directory set.")
+            return
+        open_output_folder(self.output_dir, self.append_log)
+

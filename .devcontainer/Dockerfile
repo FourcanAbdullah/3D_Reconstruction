@@ -2,42 +2,34 @@ FROM colmap/colmap:latest
 SHELL ["/bin/bash", "-lc"]
 ENV DEBIAN_FRONTEND=noninteractive PYTHONUNBUFFERED=1
 
-# --- System deps (incl. toolchain for building wheels like pyliblzfse) ---
-# RUN apt-get update && apt-get install -y --no-install-recommends \
-#     ffmpeg git curl ca-certificates \
-#     build-essential python3-dev pkg-config \
-#     liblzfse-dev \
-#     libxcb-cursor0 libxkbcommon-x11-0 libxcb-xinerama0 libxcb-icccm4 libxcb-image0 \
-#     libxcb-keysyms1 libxcb-render-util0 libgl1 libglu1-mesa mesa-utils xauth \
-#     qtwayland5 libegl1 libx11-6 libxext6 libxrender1 libxi6 libxrandr2 libxinerama1 \
-#     libxfixes3 libsm6 libice6 libfontconfig1 libfreetype6 \
-#     libxcb1 libx11-xcb1 libglib2.0-0 meshlab && \
-#     rm -rf /var/lib/apt/lists/*
+
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    # Core tools
+
     ffmpeg git curl ca-certificates \
     build-essential python3-dev pkg-config \
     liblzfse-dev \
     mesa-utils xvfb xauth \
 \
-    # X11 / Wayland / Qt / GUI deps
+
     qt5-qmake qtbase5-dev qtchooser qtwayland5 \
     libegl1 libgl1 libglu1-mesa \
 \
-    # XCB stack (for Qt, COLMAP, Nerfstudio GUI tools)
+
     libxcb1 libx11-xcb1 libxcb-cursor0 libxcb-icccm4 \
     libxcb-image0 libxcb-keysyms1 libxcb-render-util0 \
     libxcb-xinerama0 libxkbcommon-x11-0 \
 \
-    # Standard X11 libs required by COLMAP, Open3D, etc.
+
     libx11-6 libxext6 libxrender1 libxi6 \
     libxrandr2 libxinerama1 libxfixes3 \
 \
-    # Font + general deps
+
     libsm6 libice6 libfontconfig1 libfreetype6 \
 \
-    # Utility GUI applications (optional but useful)
+
     meshlab \
+\
+    xdg-utils \
 \
     && rm -rf /var/lib/apt/lists/*
 
