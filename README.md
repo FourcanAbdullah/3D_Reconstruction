@@ -32,7 +32,7 @@ Edit:
 ````
 
 ### For GPU-enabled machines
-Add the following as the first entry under `"runArgs"`:
+If not already there add the following as the first entry under `"runArgs"`:
 
 ```json
 "runArgs": [
@@ -108,6 +108,26 @@ sudo apt install x11-xserver-utils
 xhost +local:docker
 ```
 
+---
+## 8. Run
+
+Open new terminal in the container once its finished building and run:
+
+```bash
+python -m app
+```
+---
+## 8. To view Point Clouds, compare PointClouds and check stats
+
+Install CloudCompare
+[https://snapcraft.io/install/cloudcompare/ubuntu#install](https://snapcraft.io/install/cloudcompare/ubuntu#install)
+```bash
+sudo snap install cloudcompare
+```
+Run
+```bash
+cloudcompare.CloudCompare
+```
 ---
 
 
