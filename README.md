@@ -7,7 +7,7 @@
 - VS Code with the **Dev Containers** extension installed  
 - User must be added to the `docker` group  
   - (Log out and back in after adding the user)  
-- NVIDIA drivers installed and `nvidia-smi` working on host  
+- NVIDIA drivers installed and `nvidia-smi` working on host  and in container
 - NVIDIA Docker Toolkit installed  
 - CUDA Toolkit installed on the host  
 
@@ -42,7 +42,7 @@ If not already there add the following as the first entry under `"runArgs"`:
 
 ---
 
-## 4. RTutorials to set up GPU in Docker(GPU + Docker)
+## 4. Tutorials to set up GPU in Docker(GPU + Docker)
 
 * [https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html)
 * [https://www.howtogeek.com/devops/how-to-use-an-nvidia-gpu-with-docker-containers/](https://www.howtogeek.com/devops/how-to-use-an-nvidia-gpu-with-docker-containers/)
@@ -117,7 +117,7 @@ Open new terminal in the container once its finished building and run:
 python -m app
 ```
 ---
-## 8. To view Point Clouds, compare PointClouds and check stats
+## 9. To view Point Clouds, compare PointClouds and check stats
 
 Install CloudCompare
 [https://snapcraft.io/install/cloudcompare/ubuntu#install](https://snapcraft.io/install/cloudcompare/ubuntu#install)
