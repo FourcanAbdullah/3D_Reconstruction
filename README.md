@@ -2,7 +2,7 @@
 # How to Run on Ubuntu
 
 ## 1. Requirements
-- Ubuntu system with an NVIDIA GPU  
+- Ubuntu system with an NVIDIA GPU and CUDA 12.9  
 - Docker version **17.12.0 or later**  
 - VS Code with the **Dev Containers** extension installed  
 - User must be added to the `docker` group  
