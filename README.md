@@ -54,14 +54,6 @@ If not already there add the following as the first entry under `"runArgs"`:
 
 Run these **on the host system (outside the container)**:
 
-```bash
-sudo mkdir -p /etc/systemd/system/docker.service.d
-sudo tee /etc/systemd/system/docker.service.d/override.conf > /dev/null <<EOF
-[Service]
-ExecStart=
-ExecStart=/usr/bin/dockerd --host=fd:// --add-runtime=nvidia=/usr/bin/nvidia-container-runtime
-EOF
-```
 
 ```bash
 curl -s -L https://nvidia.github.io/nvidia-docker/gpgkey | sudo apt-key add -
@@ -72,6 +64,7 @@ curl -s -L https://nvidia.github.io/nvidia-docker/$distribution/nvidia-docker.li
 
 sudo apt-get update
 sudo apt-get install -y nvidia-docker2
+sudo apt-get install -y nvidia-cuda-toolkit
 sudo systemctl restart docker
 ```
 
@@ -81,11 +74,6 @@ Verify GPU:
 nvidia-smi
 ```
 
-Install CUDA toolkit:
-
-```bash
-sudo apt-get install -y nvidia-cuda-toolkit
-```
 
 ---
 
