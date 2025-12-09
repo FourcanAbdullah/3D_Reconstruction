@@ -85,7 +85,7 @@ def run_method_a(image_paths: List[str], output_dir: str, log: Callable[[str], N
     except Exception:
         pass
 
-    # sparse
+    # sparse, feature extracter
     if stream([
         "feature_extractor",
         "--database_path", db_path,
@@ -96,7 +96,7 @@ def run_method_a(image_paths: List[str], output_dir: str, log: Callable[[str], N
     ]) != 0:
         log("[SfM] feature_extractor failed.")
         return outputs
-
+    #sparse, feature matching
     if stream([
         "exhaustive_matcher",
         "--database_path", db_path,
@@ -110,6 +110,7 @@ def run_method_a(image_paths: List[str], output_dir: str, log: Callable[[str], N
         "mapper",
         "--database_path", db_path,
         "--image_path", img_dir,
+        #--input_path, "path/to/your/model",
         "--output_path", sparse_dir,
         f"--Mapper.num_threads={threads}",
     ]) != 0:
@@ -117,10 +118,29 @@ def run_method_a(image_paths: List[str], output_dir: str, log: Callable[[str], N
         return outputs
 
     model0 = os.path.join(sparse_dir, "0")
+
+
     if not os.path.isdir(model0):
         log("[SfM] No sparse model produced. Check overlap/EXIF.")
         return outputs
 
+    refined_model = os.path.join(sparse_dir, "0_ba")
+    os.makedirs(refined_model, exist_ok=True)
+    #bundle adjustment
+    log("[SfM] Running bundle adjustment")
+    if stream([
+        "bundle_adjuster",
+        "--input_path", model0,
+        "--output_path", refined_model,
+        "--BundleAdjustment.refine_focal_length", "1",    
+        "--BundleAdjustment.refine_extra_params", "1",    
+    ]) != 0:
+        log("[SfM] bundle_adjuster failed; using original model")
+        refined_model = model0   
+    else:
+        log(f"[SfM] Refined sparse model → {refined_model}")
+
+    model0 = refined_model
     outputs.append(model0)
     log(f"[SfM] Sparse model → {model0}")
 

@@ -102,7 +102,9 @@ def run_method_b(image_paths: List[str], out_dir: str, log: Callable[[str], None
         "--max-num-iterations", "20000",
         "--steps-per-eval-image", "3000",
         "--vis", "tensorboard",
-        "--pipeline.model.predict-normals", "True",
+        "--pipeline.model.predict-normals", "True"
+        # "--pipeline.datamanager.train-num-rays-per-batch", "2048",
+        # "--pipeline.datamanager.eval-num-rays-per-batch", "1024"
     ]) != 0:
         log("[NeRF] ns-train failed.")
         return outputs
