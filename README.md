@@ -118,7 +118,12 @@ cloudcompare.CloudCompare
 ```
 ---
 
-
+# CUDA Out Of Memory Error:
+Add these lines inside ns-train (around line 106
+```python
+        "--pipeline.datamanager.train-num-rays-per-batch", "2048",
+        "--pipeline.datamanager.eval-num-rays-per-batch", "1024"
+```
 # SSH Display Fix (Qt / XCB Errors)
 
 If using SSH or running GUI apps remotely, run these **inside the container**:
