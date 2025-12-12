@@ -105,6 +105,7 @@ Open new terminal in the container once its finished building and run:
 python -m app
 ```
 ---
+
 ## 9. To view Point Clouds, compare PointClouds and check stats
 
 Install CloudCompare
@@ -118,8 +119,21 @@ cloudcompare.CloudCompare
 ```
 ---
 
+## 9. To find Pipeline files and  Find PLY Point Cloud Results:
+Pipelines Can be found in /workspace/app/pipelines
+
+To change any parameters in the pipelines simply modify the cli command in the python file with a existing parameter.
+
+Point Cloud results can be found in the outputs directory(output will be created on the first run of any of the methods)
+
+Example Path to COLMAP Point cloud: /workspace/outputs/run_20251211-050837/method_a/colmap_workspace/dense/fused.ply
+
+Example Path to NerfStudio Point Cloud: /workspace/outputs/run_20251210-022551/method_b/exports/pointcloud/point_cloud.ply
+
+Run CloudCompare and input the PLY files to view point cloud. 
+
 # CUDA Out Of Memory Error:
-Add these lines inside ns-train (around line 106
+Add these lines inside ns-train (around line 106)
 ```python
         "--pipeline.datamanager.train-num-rays-per-batch", "2048",
         "--pipeline.datamanager.eval-num-rays-per-batch", "1024"
